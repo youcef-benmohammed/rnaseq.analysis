@@ -1,0 +1,253 @@
+---
+title: "Snakemake Pipeline for RNA-seq Data Analysis in *Saccharomyces cerevisiae* with SPRC Treatment"
+date: "`r Sys.Date()`"
+author: "Youcef Ben Mohammed"
+output:
+  rmdformats::downcute:
+    self_contained: true
+    default_style: "dark"
+    downcute_theme: "chaos"
+---
+
+```{r setup, include=FALSE}
+## Global options
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+## 1. Introduction 
+
+This project utilizes an **RNA-seq** pipeline based on **Snakemake** to analyze transcriptomic data. The aim is to explore the effect of **hydrogen sulfide** (H2S) in *Saccharomyces cerevisiae*. The main steps in the pipeline include quality control, alignment, read counting, and differential analysis.
+
+RNA-seq data are from the following article: 
+["Mechanism of Growth Regulation of Yeast Involving Hydrogen Sulfide From S-Propargyl-Cysteine Catalyzed by Cystathionine-γ-Lyase"]("https://pmc.ncbi.nlm.nih.gov/articles/PMC8285084/")
+
+
+## 2. Snakemake Workflow
+
+![RNA-seq Workflow](dag.png)
+
+```{r}
+
+```
+
+
+
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# Define resource dictionary mapping sample conditions to their SRA identifiers.
+resources = {
+    "samples": {
+        "SPRC": {
+            "rep1": "SRR13978640",
+            "rep2": "SRR13978641",
+            "rep3": "SRR13978642",
+        },
+        "CTRL": {
+            "rep1": "SRR13978643",
+            "rep2": "SRR13978644",
+            "rep3": "SRR13978645",
+        },
+    },
+    "references":{
+        "fasta": "genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa.gz",
+        "gtf": "genome/Saccharomyces_cerevisiae.R64-1-1.108.gtf.gz",
+        "snps": "genome/saccharomyces_cerevisiae.vcf.gz"
+    }
+}
+```
+
+
+
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# Function to extract SRA ID based on the sample's condition and replicate.
+def getSRR(wildcards):
+    all_keys = wildcards.sample.split("_") 
+    return resources["samples"][all_keys[0]][all_keys[1]]  
+
+# List of all sample names in the format 'condition_replicate'.
+samples = []
+for condition, reps in resources["samples"].items():
+    for rep in reps:
+        sample_name = f"{condition}_{rep}"
+        samples.append(sample_name)
+
+```
+
+
+
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# 'dump_fastq' rule: download raw fastq files from SRA.
+rule dump_fastq:
+    output:
+        "rawReads/{sample}_1.fastq.gz",  
+        "rawReads/{sample}_2.fastq.gz",  
+    conda:
+        "rnaseq"
+    params:
+        sra_id=lambda wildcards: getSRR(wildcards), 
+    shell:
+        """
+        fasterq-dump {params.sra_id} -O rawReads --split-files -p
+        for read in 1 2; do
+            mv rawReads/{params.sra_id}_$read.fastq rawReads/{wildcards.sample}_$read.fastq
+            gzip rawReads/{wildcards.sample}_$read.fastq rawReads/{wildcards.sample}_$read.fastq.gz
+        done
+        """
+```
+
+
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# 'fastp' rule: run fastp to trim and generate quality reports for the reads.
+rule fastp:
+    input:
+        "rawReads/{sample}_1.fastq.gz",  
+        "rawReads/{sample}_2.fastq.gz", 
+    output:
+        "trimmedReads/{sample}_1_trimmed.fastq.gz", 
+        "trimmedReads/{sample}_2_trimmed.fastq.gz",  
+        "fastpQC/{sample}_fastp_report.html",  
+    conda:
+        "rnaseq"
+    shell:
+        """
+        fastp -i {input[0]} -I {input[1]} -o {output[0]} -O {output[1]} --detect_adapter_for_pe -q 20 -h {output[2]} -R "{wildcards.sample} fastp report"
+        """
+```
+
+
+
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# 'index_genome' rule: generate genome index files using Samtools, STAR, Tabix, and Picard.
+rule index_genome:
+    input:
+        fasta_gz=resources["references"]["fasta"],  # Compressed FASTA file (.gz)
+        gtf_gz=resources["references"]["gtf"],
+        gtf="genome/Saccharomyces_cerevisiae.R64-1-1.108.gtf",
+        fasta="genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa",
+        snps=resources["references"]["snps"]
+    output:
+        genome_dir=directory("starIndex"),
+        samtools_index="genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa.gz.fai",
+        dict_file="genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.dict",
+        tbi="genome/saccharomyces_cerevisiae.vcf.gz.tbi"
+    conda:
+        "rnaseq"
+    shell:
+        """
+        # Generate the index for the compressed genome FASTA (.gz)
+        samtools faidx {input.fasta_gz}
+
+        # Generate the genome index with STAR
+        STAR --runThreadN 2 --runMode genomeGenerate --genomeDir {output.genome_dir} \
+             --genomeSAindexNbases 10 --sjdbGTFfile {input.gtf} --genomeFastaFiles {input.fasta}
+
+        # Create the tabix index for SNPs
+        tabix -f {input.snps}
+
+        # Create the sequence dictionary file for Picard
+        picard CreateSequenceDictionary -R {input.fasta}
+        """
+```
+
+
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# 'star_align' rule: align reads with STAR.
+rule star_align:
+    input:
+        fq1="trimmedReads/{sample}_1_trimmed.fastq.gz",
+        fq2="trimmedReads/{sample}_2_trimmed.fastq.gz",
+        indexDir="starIndex"
+    output:
+        bam="starAligned/{sample}/{sample}_Aligned.sortedByCoord.out.bam"
+    conda:
+        "rnaseq"
+    shell:
+        """
+        # Unzip FASTQ files temporarily
+        gunzip -c {input.fq1} > {wildcards.sample}_1_trimmed.fastq
+        gunzip -c {input.fq2} > {wildcards.sample}_2_trimmed.fastq
+
+        mkdir -p starAligned/{wildcards.sample}
+
+        # Run STAR alignment
+        STAR --runMode alignReads \
+             --genomeDir {input.indexDir} \
+             --outSAMtype BAM SortedByCoordinate \
+             --readFilesIn {wildcards.sample}_1_trimmed.fastq {wildcards.sample}_2_trimmed.fastq \
+             --outFileNamePrefix starAligned/{wildcards.sample}/{wildcards.sample}_
+
+        # Clean up temporary FASTQ files
+        rm {wildcards.sample}_1_trimmed.fastq {wildcards.sample}_2_trimmed.fastq
+        """
+```
+
+
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# Rule to index the BAM file with samtools
+rule index_bam:
+    input:
+        bam="starAligned/{sample}/{sample}_Aligned.sortedByCoord.out.bam"
+    output:
+        bai="starAligned/{sample}/{sample}_Aligned.sortedByCoord.out.bam.bai"
+    conda:
+        "rnaseq"
+    shell:
+        """
+        samtools index {input.bam}
+        """
+```
+
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+rule rmDuplicates:
+    input:
+        bam="starAligned/{sample}/{sample}_Aligned.sortedByCoord.out.bam"
+    output:               
+        bam="starAligned/{sample}/{sample}_Aligned.sortedByCoord.RD.out.bam",
+    params:
+        dupStats="starAligned/{sample}/{sample}_dupStats.txt"
+    conda:
+        "rnaseq"
+    threads:
+        3
+    shell:
+        """                
+        samtools sort --threads {threads} {input.bam} | samtools rmdup -s - {output.bam} 2> {params.dupStats}
+        """
+```
+
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+rule index_nonDupBam:
+    input:
+        bam="starAligned/{sample}/{sample}_Aligned.sortedByCoord.RD.out.bam"
+    output:
+        bai="starAligned/{sample}/{sample}_Aligned.sortedByCoord.RD.out.bam.bai"
+    conda:
+        "rnaseq"
+    shell:
+        """
+        samtools index {input.bam}
+        """
+```
+
+
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+
+
+
+rule countsFeature:
+    input:
+        gtf="genome/Saccharomyces_cerevisiae.R64-1-1.108.gtf",
+        bam=expand("starAligned/{sample}/{sample}_Aligned.sortedByCoord.RD.out.bam", sample=samples)
+    output:
+        countTable="featureCounts/all_counts.txt"  
+    conda:
+        "rnaseq"
+    threads:
+        3
+    shell:
+        """
+        featureCounts -a {input.gtf} -o {output.countTable} -T {threads} {input.bam}
+        """
+```
+
+
+
