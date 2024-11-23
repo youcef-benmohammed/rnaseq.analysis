@@ -162,20 +162,17 @@ rule star_align:
         "rnaseq"
     shell:
         """
-        # Unzip FASTQ files temporarily
         gunzip -c {input.fq1} > {wildcards.sample}_1_trimmed.fastq
         gunzip -c {input.fq2} > {wildcards.sample}_2_trimmed.fastq
 
         mkdir -p starAligned/{wildcards.sample}
 
-        # Run STAR alignment
         STAR --runMode alignReads \
              --genomeDir {input.indexDir} \
              --outSAMtype BAM SortedByCoordinate \
              --readFilesIn {wildcards.sample}_1_trimmed.fastq {wildcards.sample}_2_trimmed.fastq \
              --outFileNamePrefix starAligned/{wildcards.sample}/{wildcards.sample}_
 
-        # Clean up temporary FASTQ files
         rm {wildcards.sample}_1_trimmed.fastq {wildcards.sample}_2_trimmed.fastq
         """
 ```
@@ -231,8 +228,6 @@ rule index_nonDupBam:
 
 ```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
 
-
-
 rule countsFeature:
     input:
         gtf="genome/Saccharomyces_cerevisiae.R64-1-1.108.gtf",
@@ -250,4 +245,115 @@ rule countsFeature:
 ```
 
 
+# 3. Analyse 
 
+
+```{r}
+counts <- read.delim("featureCounts/all_counts.txt", header = TRUE, comment.char = "#")
+head(counts)
+```
+
+
+```{r}
+# Subset the data to keep only the counts columns
+geneIDs <- counts$Geneid 
+counts <- counts[, 7:ncol(counts)]
+rownames(counts)  <- geneIDs
+colnames(counts) <- gsub("starAligned\\.|_Aligned.sortedByCoord.RD.out.bam", "", colnames(counts))
+colnames(counts) <- sub("\\..*", "", colnames(counts))
+head(counts)
+```
+
+```{r}
+counts <- counts[rowSums(counts >= 10) >= 6, ]
+```
+
+
+```{r}
+sampleNames <- colnames(counts)
+conditions <- c("SPRC", "SPRC", "SPRC", "CTRL", "CTRL", "CTRL")
+
+metadata <- data.frame(
+  sample = sampleNames,   
+  condition = conditions   
+)
+
+rownames(metadata) <- metadata$sample
+
+print(metadata)
+```
+
+### Perfom normalization DESeq2
+
+Raw count values must be normalized to account for differences in sequencing depth.
+
+```{r, warning=FALSE, message=FALSE}
+library(DESeq2)
+# create DESeqDataSet
+dds <- DESeqDataSetFromMatrix(countData = counts,   
+                              colData = metadata,    
+                              design = ~ condition)
+```
+
+
+```{r}
+dds
+```
+
+
+```{r}
+# Perform normalization and logarithmic transformation
+dds <- DESeq(dds)
+norm.counts <- counts(dds, normalized = TRUE)
+```
+
+
+```{r}
+head(norm.counts)
+```
+
+### Exploratory analysis
+
+Perform an exploratory analysis on the normalized data.
+
+PCA (Principal Component Analysis):
+
+```{r}
+rld <- rlog(dds) # Log transformation to stabilize variance
+plotPCA(rld, intgroup = 'condition')
+```
+
+```{r}
+plotPCA(rld, intgroup = 'sample')
+```
+
+### 5 Differential analysis (DE)
+
+Identify genes differentially expressed between the conditions (CTRL vs SPRC).
+
+```{r}
+res <- results(dds, contrast = c("condition", "SPRC", "CTRL"))
+
+res.sig <- res[which(res$padj < 0.05), ]  # subset significant genes (adjusted p-value < 0.05)
+
+write.csv(as.data.frame(res.sig), "DE_genes.csv")
+```
+
+###  Visualization of differentially expressed genes  (DEG)
+
+```{r}
+# volcano plot
+library(EnhancedVolcano)
+EnhancedVolcano(res,
+                lab = rownames(res),
+                x = "log2FoldChange",
+                y = "padj",
+                pCutoff = 0.05,
+                FCcutoff = 1)
+```
+
+
+```{r}
+res.fc <- res.sig[abs(res.sig$log2FoldChange) >= 1, ]
+dim(res.fc)
+```

@@ -1,0 +1,14 @@
+BiocGenerics
+S4Vectors
+IRanges
+GenomeInfoDb
+GenomicRanges
+matrixStats
+MatrixGenerics
+Biobase
+SummarizedExperiment
+DESeq2
+pheatmap
+ggplot2
+ggrepel
+EnhancedVolcano
