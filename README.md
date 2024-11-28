@@ -1,4 +1,4 @@
-# RNA-seq Analysis of Saccharomyces cerevisiae with H₂S Treatment
+# Snakemake Pipeline for RNA-seq and DE Analysis
 
 <div style="text-align: justify">
 This project explores the effects of hydrogen sulfide (H₂S) on Saccharomyces cerevisiae through RNA-seq analysis. 
