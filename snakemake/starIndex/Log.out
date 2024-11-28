@@ -1,0 +1,108 @@
+STAR version=2.7.11b
+STAR compilation time,server,dir=2024-07-03T14:39:20+0000 :/opt/conda/conda-bld/star_1720017372352/work/source
+##### Command Line:
+/home/yben/mambaforge/envs/rnaseq/bin/STAR-avx2 --runThreadN 2 --runMode genomeGenerate --genomeDir starIndex --genomeSAindexNbases 10 --sjdbGTFfile genome/Saccharomyces_cerevisiae.R64-1-1.108.gtf --genomeFastaFiles genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa
+##### Initial USER parameters from Command Line:
+###### All USER parameters from Command Line:
+runThreadN                    2     ~RE-DEFINED
+runMode                       genomeGenerate        ~RE-DEFINED
+genomeDir                     starIndex     ~RE-DEFINED
+genomeSAindexNbases           10     ~RE-DEFINED
+sjdbGTFfile                   genome/Saccharomyces_cerevisiae.R64-1-1.108.gtf     ~RE-DEFINED
+genomeFastaFiles              genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa        ~RE-DEFINED
+##### Finished reading parameters from all sources
+
+##### Final user re-defined parameters-----------------:
+runMode                           genomeGenerate   
+runThreadN                        2
+genomeDir                         starIndex
+genomeFastaFiles                  genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa   
+genomeSAindexNbases               10
+sjdbGTFfile                       genome/Saccharomyces_cerevisiae.R64-1-1.108.gtf
+
+-------------------------------
+##### Final effective command line:
+/home/yben/mambaforge/envs/rnaseq/bin/STAR-avx2   --runMode genomeGenerate      --runThreadN 2   --genomeDir starIndex   --genomeFastaFiles genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa      --genomeSAindexNbases 10   --sjdbGTFfile genome/Saccharomyces_cerevisiae.R64-1-1.108.gtf
+----------------------------------------
+
+Number of fastq files for each mate = 1
+ParametersSolo: --soloCellFilterType CellRanger2.2 filtering parameters:  3000 0.99 10
+Finished loading and checking parameters
+--genomeDir directory created: starIndex/
+Nov 21 15:24:20 ... starting to generate Genome files
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 0  "I" chrStart: 0
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 1  "II" chrStart: 262144
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 2  "III" chrStart: 1310720
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 3  "IV" chrStart: 1835008
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 4  "V" chrStart: 3407872
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 5  "VI" chrStart: 4194304
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 6  "VII" chrStart: 4718592
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 7  "VIII" chrStart: 6029312
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 8  "IX" chrStart: 6815744
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 9  "X" chrStart: 7340032
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 10  "XI" chrStart: 8126464
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 11  "XII" chrStart: 8912896
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 12  "XIII" chrStart: 10223616
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 13  "XIV" chrStart: 11272192
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 14  "XV" chrStart: 12058624
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 15  "XVI" chrStart: 13369344
+genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa : chr # 16  "Mito" chrStart: 14417920
+Chromosome sequence lengths: 
+I	230218
+II	813184
+III	316620
+IV	1531933
+V	576874
+VI	270161
+VII	1090940
+VIII	562643
+IX	439888
+X	745751
+XI	666816
+XII	1078177
+XIII	924431
+XIV	784333
+XV	1091291
+XVI	948066
+Mito	85779
+Genome sequence total length = 12157105
+Genome size with padding = 14680064
+Nov 21 15:24:20 ..... processing annotations GTF
+Processing pGe.sjdbGTFfile=genome/Saccharomyces_cerevisiae.R64-1-1.108.gtf, found:
+		7127 transcripts
+		7507 exons (non-collapsed)
+		364 collapsed junctions
+Total junctions: 364
+Nov 21 15:24:20 ..... finished GTF processing
+
+Estimated genome size with padding and SJs: total=genome+SJ=215680064 = 14680064 + 201000000
+GstrandBit=32
+Number of SA indices: 24314210
+Nov 21 15:24:20 ... starting to sort Suffix Array. This may take a long time...
+Number of chunks: 1;   chunks size limit: 194513680 bytes
+Nov 21 15:24:20 ... sorting Suffix Array chunks and saving them to disk...
+Writing 194513680 bytes into starIndex//SA_0 ; empty space on disk = 47783739392 bytes ... done
+Nov 21 15:24:33 ... loading chunks from disk, packing SA...
+Nov 21 15:24:33 ... finished generating suffix array
+Nov 21 15:24:33 ... generating Suffix Array index
+Nov 21 15:24:34 ... completed Suffix Array index
+Nov 21 15:24:34   Finished preparing junctions
+Nov 21 15:24:34 ..... inserting junctions into the genome indices
+Nov 21 15:24:34   Finished SA search: number of new junctions=364, old junctions=0
+Nov 21 15:24:35   Finished sorting SA indicesL nInd=145600
+Genome size with junctions=14753228  14680064   73164
+GstrandBit1=32   GstrandBit=32
+Nov 21 15:24:35   Finished inserting junction indices
+Nov 21 15:24:35   Finished SAi
+Nov 21 15:24:35 ..... finished inserting junctions into genome
+Nov 21 15:24:35 ... writing Genome to disk ...
+Writing 14753228 bytes into starIndex//Genome ; empty space on disk = 47783714816 bytes ... done
+SA size in bytes: 100896720
+Nov 21 15:24:35 ... writing Suffix Array to disk ...
+Writing 100896720 bytes into starIndex//SA ; empty space on disk = 47768961024 bytes ... done
+Nov 21 15:24:35 ... writing SAindex to disk
+Writing 8 bytes into starIndex//SAindex ; empty space on disk = 47668064256 bytes ... done
+Writing 88 bytes into starIndex//SAindex ; empty space on disk = 47668064256 bytes ... done
+Writing 6116691 bytes into starIndex//SAindex ; empty space on disk = 47668064256 bytes ... done
+Nov 21 15:24:35 ..... finished successfully
+DONE: Genome generation, EXITING

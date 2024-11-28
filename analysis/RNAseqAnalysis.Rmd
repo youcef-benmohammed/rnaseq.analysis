@@ -1,0 +1,574 @@
+---
+title: "RNA-seq Data Analysis in *Saccharomyces cerevisiae* with SPRC Treatment"
+date: "`r Sys.Date()`"
+author: "Youcef Ben Mohammed"
+output: 
+  rmdformats::readthedown:
+    self_contained: true
+    thumbnails: true
+    lightbox: true
+    gallery: false
+    highlight: tango
+    df_print: paged
+    toc_depth: 6
+    number_sections: true
+    collapsed: false
+---
+
+```{r setup, include=FALSE}
+## Global options
+knitr::opts_chunk$set(cache=TRUE, fig.align = 'center', fig.width = 10, fig.height = 6) # for html
+options(width = 150)
+```
+# Introduction 
+
+<div style="text-align: justify">
+This project investigates the effect of **hydrogen sulfide (H₂S)** on *Saccharomyces cerevisiae* using an RNA-seq analysis pipeline. The pipeline includes data preprocessing, read counting, differential expression analysis, and KEGG pathway enrichment.
+
+Initially, the raw sequencing data undergoes quality control, alignment to the S. cerevisiae reference genome, and quantification of gene expression. Differential expression analysis is then performed to identify genes with significant changes in expression between experimental conditions. Finally, KEGG pathway enrichment analysis highlights biological pathways associated with the differentially expressed genes (DEGs).
+
+This analysis provides insights into how H₂S influences gene expression and related pathways in Saccharomyces cerevisiae.
+
+RNA-seq data are from the following article: 
+[Mechanism of Growth Regulation of Yeast Involving Hydrogen Sulfide From S-Propargyl-Cysteine Catalyzed by Cystathionine-γ-Lyase](https://pmc.ncbi.nlm.nih.gov/articles/PMC8285084/)
+</div>
+
+# Snakemake Workflow
+
+<div style="text-align: justify">
+Snakemake is a workflow management tool used to automate and organize complex data analyses. It works by defining **rules** that describe the steps in the pipeline, with their **input** files, **output** files and **commands** to be executed.
+
+Snakemake enhances the execution of workflows through key technical features. It automatically resolves rule dependencies, ensuring the correct execution order. The system also supports parallelization, enabling multiple tasks to be processed simultaneously for improved efficiency. Furthermore, Snakemake promotes reproducibility by supporting isolated environments via tools like Conda or Docker, ensuring that workflows can be reliably recreated in different settings.
+</div>
+## Define resources and metadata
+<div style="text-align: justify">
+We need to set up the required workflow resources, including SRA identifiers for the samples and reference files for the genome, GTF annotation, and SNPs, to enable dynamic parameterization of the workflow with resources linked to specific conditions and replicates.
+</div>
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# Define resource dictionary mapping sample conditions to their SRA identifiers.
+resources = {
+    "samples": {
+        "SPRC": {
+            "rep1": "SRR13978640",
+            "rep2": "SRR13978641",
+            "rep3": "SRR13978642",
+        },
+        "CTRL": {
+            "rep1": "SRR13978643",
+            "rep2": "SRR13978644",
+            "rep3": "SRR13978645",
+        },
+    },
+    "references":{
+        "fasta": "genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa.gz",
+        "gtf": "genome/Saccharomyces_cerevisiae.R64-1-1.108.gtf.gz",
+        "snps": "genome/saccharomyces_cerevisiae.vcf.gz"
+    }
+}
+```
+
+## Extract SRA identifiers
+<div style="text-align: justify">
+To ensure the workflow is flexible and reusable for any sample set, we have defined a function, which dynamically extracts SRA identifiers based on the condition (SPRC or CTRL) and replicate (rep1, rep2, etc.).
+</div>
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# Function to extract SRA ID based on the sample's condition and replicate.
+def getSRR(wildcards):
+    all_keys = wildcards.sample.split("_") 
+    return resources["samples"][all_keys[0]][all_keys[1]]  
+
+# List of all sample names in the format 'condition_replicate'.
+samples = []
+for condition, reps in resources["samples"].items():
+    for rep in reps:
+        sample_name = f"{condition}_{rep}"
+        samples.append(sample_name)
+
+```
+
+## Download FASTQ files from SRA
+<div style="text-align: justify">
+The `dump_fastq` rule downloads raw FASTQ files from SRA for each sample using `fasterq-dump`. The downloaded files are compressed in `.fastq.gz` format and stored in the `rawReads/` directory.
+</div>
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# 'dump_fastq' rule: download raw fastq files from SRA.
+rule dump_fastq:
+    output:
+        "rawReads/{sample}_1.fastq.gz",  
+        "rawReads/{sample}_2.fastq.gz",  
+    conda:
+        "rnaseq"
+    params:
+        sra_id=lambda wildcards: getSRR(wildcards), 
+    shell:
+        """
+        fasterq-dump {params.sra_id} -O rawReads --split-files -p
+        for read in 1 2; do
+            mv rawReads/{params.sra_id}_$read.fastq rawReads/{wildcards.sample}_$read.fastq
+            gzip rawReads/{wildcards.sample}_$read.fastq rawReads/{wildcards.sample}_$read.fastq.gz
+        done
+        """
+```
+
+## Trim Adapters and Perform Quality Control with fastp
+<div style="text-align: justify">
+The `fastp` rule trims adapter sequences and performs quality control on paired-end FASTQ files using the tool `fastp`. It generates trimmed FASTQ files in `.fastq.gz` format and provides a detailed quality control report in HTML format. This step ensures that reads with poor quality or adapter contamination are filtered out before downstream analysis.
+</div>
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# 'fastp' rule: run fastp to trim and generate quality reports for the reads.
+rule fastp:
+    input:
+        "rawReads/{sample}_1.fastq.gz",  
+        "rawReads/{sample}_2.fastq.gz", 
+    output:
+        "trimmedReads/{sample}_1_trimmed.fastq.gz", 
+        "trimmedReads/{sample}_2_trimmed.fastq.gz",  
+        "fastpQC/{sample}_fastp_report.html",  
+    conda:
+        "rnaseq"
+    shell:
+        """
+        fastp -i {input[0]} -I {input[1]} -o {output[0]} -O {output[1]} --detect_adapter_for_pe -q 20 -h {output[2]} -R "{wildcards.sample} fastp report"
+        """
+```
+
+## Index Genome for Alignment (Samtools, STAR, Picard)
+<div style="text-align: justify">
+The `index_genome` rule generates the necessary index files for the genome to be used in the alignment step. It employs several tools: `samtools` to index the compressed FASTA file, `STAR` to create a genome index for RNA-Seq alignment, `tabix` to index SNP data, and `Picard` to create a sequence dictionary file. 
+</div>
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# 'index_genome' rule: generate genome index files using Samtools, STAR, Tabix, and Picard.
+rule index_genome:
+    input:
+        fasta_gz=resources["references"]["fasta"],  # Compressed FASTA file (.gz)
+        gtf_gz=resources["references"]["gtf"],
+        gtf="genome/Saccharomyces_cerevisiae.R64-1-1.108.gtf",
+        fasta="genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa",
+        snps=resources["references"]["snps"]
+    output:
+        genome_dir=directory("starIndex"),
+        samtools_index="genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.fa.gz.fai",
+        dict_file="genome/Saccharomyces_cerevisiae.R64-1-1.dna.primary_assembly.dict",
+        tbi="genome/saccharomyces_cerevisiae.vcf.gz.tbi"
+    conda:
+        "rnaseq"
+    shell:
+        """
+        # Generate the index for the compressed genome FASTA (.gz)
+        samtools faidx {input.fasta_gz}
+
+        # Generate the genome index with STAR
+        STAR --runThreadN 2 --runMode genomeGenerate --genomeDir {output.genome_dir} \
+             --genomeSAindexNbases 10 --sjdbGTFfile {input.gtf} --genomeFastaFiles {input.fasta}
+
+        # Create the tabix index for SNPs
+        tabix -f {input.snps}
+
+        # Create the sequence dictionary file for Picard
+        picard CreateSequenceDictionary -R {input.fasta}
+        """
+```
+
+## Align reads with STAR
+<div style="text-align: justify">
+The `star_align` rule aligns reads to the indexed genome using the `STAR` aligner. The output of this step is a sorted BAM file containing the aligned reads.
+</div>
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# 'star_align' rule: align reads with STAR.
+rule star_align:
+    input:
+        fq1="trimmedReads/{sample}_1_trimmed.fastq.gz",
+        fq2="trimmedReads/{sample}_2_trimmed.fastq.gz",
+        indexDir="starIndex"
+    output:
+        bam="starAligned/{sample}/{sample}_Aligned.sortedByCoord.out.bam"
+    conda:
+        "rnaseq"
+    shell:
+        """
+        gunzip -c {input.fq1} > {wildcards.sample}_1_trimmed.fastq
+        gunzip -c {input.fq2} > {wildcards.sample}_2_trimmed.fastq
+
+        mkdir -p starAligned/{wildcards.sample}
+
+        STAR --runMode alignReads \
+             --genomeDir {input.indexDir} \
+             --outSAMtype BAM SortedByCoordinate \
+             --readFilesIn {wildcards.sample}_1_trimmed.fastq {wildcards.sample}_2_trimmed.fastq \
+             --outFileNamePrefix starAligned/{wildcards.sample}/{wildcards.sample}_
+
+        rm {wildcards.sample}_1_trimmed.fastq {wildcards.sample}_2_trimmed.fastq
+        """
+```
+
+## Index BAM File with Samtools
+<div style="text-align: justify">
+The `index_bam` rule generates a BAM index file for the aligned BAM file produced by `star_align`.
+</div>
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+# Rule to index the BAM file with samtools
+rule index_bam:
+    input:
+        bam="starAligned/{sample}/{sample}_Aligned.sortedByCoord.out.bam"
+    output:
+        bai="starAligned/{sample}/{sample}_Aligned.sortedByCoord.out.bam.bai"
+    conda:
+        "rnaseq"
+    shell:
+        """
+        samtools index {input.bam}
+        """
+```
+
+## Remove Duplicate Reads from BAM File
+<div style="text-align: justify">
+The `rmDuplicates` rule uses `samtools rmdup` to remove duplicates and creates a new BAM file without duplicates. Duplicate reads can arise during PCR amplification, and their removal helps improve the accuracy of downstream analyses.
+</div>
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+rule rmDuplicates:
+    input:
+        bam="starAligned/{sample}/{sample}_Aligned.sortedByCoord.out.bam"
+    output:               
+        bam="starAligned/{sample}/{sample}_Aligned.sortedByCoord.RD.out.bam",
+    params:
+        dupStats="starAligned/{sample}/{sample}_dupStats.txt"
+    conda:
+        "rnaseq"
+    threads:
+        3
+    shell:
+        """                
+        samtools sort --threads {threads} {input.bam} | samtools rmdup -s - {output.bam} 2> {params.dupStats}
+        """
+```
+
+## Index Non-Duplicated BAM Files
+<div style="text-align: justify">
+The `index_nonDupBam` rule creates BAM index files for the deduplicated BAM files generated by the rmDuplicates rule. Indexing the deduplicated BAM files is crucial for efficient access to specific regions in subsequent steps, such as variant calling or visualization (IGV).
+</div>
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+rule index_nonDupBam:
+    input:
+        bam="starAligned/{sample}/{sample}_Aligned.sortedByCoord.RD.out.bam"
+    output:
+        bai="starAligned/{sample}/{sample}_Aligned.sortedByCoord.RD.out.bam.bai"
+    conda:
+        "rnaseq"
+    shell:
+        """
+        samtools index {input.bam}
+        """
+```
+
+## Count the Number of Mapped Reads in BAM Files
+<div style="text-align: justify">
+The `countsFeature` rule uses the `featureCounts` tool to count the number of reads that map to each feature (e.g., genes or exons) in the genome. Here the input is the aligned BAM files from the rmDuplicates step and the gene annotation in GTF format.
+</div>
+```{python eval=FALSE, include=TRUE, python.reticulate=FALSE}
+
+rule countsFeature:
+    input:
+        gtf="genome/Saccharomyces_cerevisiae.R64-1-1.108.gtf",
+        bam=expand("starAligned/{sample}/{sample}_Aligned.sortedByCoord.RD.out.bam", sample=samples)
+    output:
+        countTable="featureCounts/all_counts.txt"  
+    conda:
+        "rnaseq"
+    threads:
+        3
+    shell:
+        """
+        featureCounts -a {input.gtf} -o {output.countTable} -T {threads} {input.bam}
+        """
+```
+
+## Generate DAG (Directed Acyclic Graph) for Workflow
+<div style="text-align: justify">
+A Directed Acyclic Graph (DAG) can be generated with Snakemake to visualize the workflow structure and task dependencies. Each node represents a task, and edges show the execution order.
+
+Here’s an example DAG for the RNA-seq workflow:
+</div>
+![RNA-seq Workflow DAG](dag.png)
+
+# Differential Gene Expression Analysis 
+
+```{r}
+counts <- read.delim("featureCounts/all_counts.txt", header = TRUE, comment.char = "#")
+head(counts)
+```
+
+Number of GeneIDs inside the data 
+
+```{r}
+nrow(counts)
+```
+
+Number of the duplicated GeneIDs
+
+```{r}
+sum(duplicated(counts$Geneid))
+```
+
+```{r}
+#Subset the data to keep only the counts columns
+geneIDs <- counts$Geneid
+counts <- counts[, 7:ncol(counts)]
+rownames(counts)  <- geneIDs
+colnames(counts) <- gsub("starAligned\\.|_Aligned.sortedByCoord.RD.out.bam", "", colnames(counts))
+colnames(counts) <- sub("\\..*", "", colnames(counts))
+head(counts)
+
+```
+
+<div style="text-align: justify">
+To perform DESeq2 analysis, it is necessary to map the columns of the count data to their corresponding groups or conditions.
+
+DESeq2 requires a metadata as a data-frame where the samples are represented as row names and the conditions or groups are specified as column names.
+</div>
+```{r}
+sampleNames <- colnames(counts)
+conditions <- c("SPRC", "SPRC", "SPRC", "CTRL", "CTRL", "CTRL")
+
+metadata <- data.frame(sample = sampleNames,   
+                       condition = conditions)
+
+rownames(metadata) <- metadata$sample
+metadata
+```
+
+<div style="text-align: justify">
+Although pre-filtering low-count genes before running DESeq2 is not mandatory, it offers two key benefits: first, by removing rows with very few reads, it reduces the memory size of the DESeqDataSet (dds) object and speeds up the transformation and testing functions in DESeq2. Second, since features without data for differential expression are not plotted, this step can enhance the quality of visualizations.
+
+Genes with a total count of 10 or more are retained for the differential expression analysis.
+</div>
+```{r}
+counts <- counts[rowSums(counts) >= 10, ]
+nrow(counts)
+```
+
+
+## Perfom DESeq2 Analysis
+
+```{r, warning=FALSE, message=FALSE}
+library(DESeq2)
+# create DESeqDataSet
+dds <- DESeqDataSetFromMatrix(countData = counts,   
+                              colData = metadata,    
+                              design = ~ condition)
+dds
+```
+<div style="text-align: justify">
+The DESeq function estimates size factors and dispersions from the provided count data, then applies a negative binomial generalized linear model to identify differentially expressed genes. The updated DESeqDataSet (dds) object includes the results of the analysis.
+</div>
+```{r, message=FALSE, warning=FALSE}
+dds <- DESeq(dds)
+dds
+```
+<div style="text-align: justify">
+The results of the differential expression analysis are extracted from the dds object using the results function. This function calculates the log2 fold changes, p-values, and adjusted p-values (using the Benjamini-Hochberg method) for each gene. The contrast argument specifies the comparison of interest—in this case, comparing the SPRC condition to the CTRL condition based on the condition variable. The alpha argument sets the significance threshold to 0.05, controlling the false discovery rate (FDR). The resulting res object contains the differentially expressed genes (DEGs) along with their corresponding statistical metrics, which can be further explored and analyzed.
+</div>
+
+```{r}
+res <- results(dds, contrast = c("condition", "SPRC", "CTRL"), alpha = 0.05)
+```
+
+Out of 6,210 genes analyzed, 1.4% (88) are upregulated, and 1.1% (66) are downregulated with an adjusted p-value < 0.05.
+
+```{r}
+summary(res)
+```
+Order the results table by the smallest padj_value
+
+```{r}
+resOrder <- res[order(res$padj),]
+head(resOrder)
+```
+
+## PlotMA
+<div style="text-align: justify">
+The MA plot visualizes gene expression changes between two conditions (e.g., Control vs. Treated). It displays the log2 fold change (M) on the Y-axis and the log of the mean normalized expression counts on the X-axis. Genes with lower mean expression often show higher variability in log2 fold change.
+
+- Blue dots: Represent significant DEGs with adjusted p-values < 0.05.
+- Triangles at the edges: Indicate genes with high fold changes, with the triangle's direction corresponding to the fold change direction.
+- Right-side genes: Represent genes with high mean normalized counts and large fold changes, making them particularly interesting for further investigation.
+</div>
+```{r, eval=FALSE, include=TRUE}
+plotMA(res, cex=.7, ylim=c(-4,4))
+abline(h=c(-1,1), col="red", lwd=3)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+knitr::include_graphics('plotMA.png')
+```
+<div style="text-align: justify">
+Shrinkage of effect size (log2 fold change estimates) is valuable for both visualization and gene ranking. Using shrunken log2 fold change values in the MA plot enhances clarity by reducing noise caused by low-count genes. This approach eliminates the need for arbitrary filtering thresholds, providing a more accurate and interpretable representation of the data.
+</div>
+```{r, warning=FALSE, message=FALSE}
+resultsNames(dds)
+resLFC <- lfcShrink(dds, coef='condition_SPRC_vs_CTRL', type='apeglm')
+```
+
+```{r, eval=FALSE, include=TRUE}
+plotMA(resLFC, cex=0.7, ylim=c(-4,4))
+abline(h=c(-1,1), col="red", lwd=3)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+knitr::include_graphics('plotMA.sh.png')
+```
+
+## Dispersion Plot  
+<div style="text-align: justify">
+Dispersion measures the variability or spread in the data. Common measures of dispersion include variance, standard deviation, and interquartile range (IQR). However, DESeq2 uses a specific dispersion model that relates the mean (\( \mu \)) and variance (\( \text{var} \)) of the data as follows:  
+\[
+\text{var} = \mu + \alpha \cdot \mu^2
+\]  
+Where \( \alpha \) is the dispersion parameter.
+
+- A dispersion value of 0.01 indicates an expected 10% variation around the mean across biological replicates.  
+- Dispersion in DESeq2 has the following relationships:  
+  - **Inversely related to the mean**: Higher dispersion is observed with lower mean counts.  
+  - **Directly related to variance**: Dispersion increases with higher variance.  
+- For genes with the same mean, dispersion values differ based on their variance, reflecting the variability in gene expression for a given mean.
+
+**Step 1**: Dispersion estimates are calculated for each gene using maximum likelihood estimation.
+
+**Step 2**: Fit a curve to the gene-wise dispersion estimates.  
+This curve represents the expected dispersion values based on the mean expression levels of the genes. It models the relationship between the mean and dispersion to provide a smooth trend.
+
+**Step 3**: Shrink the gene-wise dispersion estimates toward the curve.  
+Gene-wise dispersions are adjusted (shrunken) toward the curve to obtain the final dispersion estimates. This shrinkage reduces the influence of extreme dispersion values and stabilizes the results.  
+
+- **Exception**: Some genes with extremely high variability (dispersion) will not be shrunk toward the curve. DESeq2 assumes these genes do not follow the modeling assumptions, avoiding potential false positives that could arise from forcing these genes to fit the model.
+</div>
+```{r}
+plotDispEsts(dds, main='Dispersion plot')
+```
+
+## Principal Component Analysis (PCA)
+<div style="text-align: justify">
+PCA captures the variance within the dataset and reveals whether the samples are related or distinct from one another. 
+</div>
+```{r}
+rld <- DESeq2::rlogTransformation(dds, blind = FALSE)
+head(assay(rld))
+```
+
+```{r}
+hist(assay(rld))
+```
+
+<div style="text-align: justify">
+The first principal component (PC1) explains 51% of the variation in the data and shows a clear clustering, with SPRC samples on the left and CTRL samples on the right. The second principal component (PC2) explains 27% of the variation but does not reveal a biologically meaningful pattern.
+</div>
+```{r, message=FALSE, warning=FALSE}
+library(ggplot2)
+PCAA <- plotPCA(rld, intgroup = 'condition')
+PCAA + geom_text(aes(label = name), size = 2.5) + ggtitle("PCA Plot")
+```
+
+## VolcanoPlot
+<div style="text-align: justify">
+Volcano Plot is a quick way to visualize DEG by plotting log2 fold change (x-axis) against -log10(p-value) (y-axis). Genes with large fold changes and low p-values appear in the upper corners, helping identify significant upregulated or downregulated genes. 
+</div>
+```{r}
+# volcano plot
+library(EnhancedVolcano)
+EnhancedVolcano(res,
+                lab = rownames(res),
+                x = "log2FoldChange",
+                y = "padj",
+                title = 'SPRC vs. CTRL',
+                pCutoff = 5e-2,
+                FCcutoff = 1,
+                pointSize = 2,
+                labSize = 3)
+```
+
+## Subset Down & Up Regulated Genes
+
+```{r}
+down <- res[which(res$padj < 5e-2 & res$log2FoldChange < -1),]
+up <- res[which(res$padj < 5e-2 & res$log2FoldChange > 1),]
+
+dclust <- assay(rld)[rownames(down),]
+uclust <- assay(rld)[rownames(up),]
+
+dclust_order <- hclust(dist(dclust))$order
+dclust_sorted <- dclust[dclust_order, ]
+
+uclust_order <- hclust(dist(uclust))$order
+uclust_sorted <- uclust[uclust_order, ]
+
+combined_data <- rbind(dclust_sorted, uclust_sorted)
+de.geneIds <- c(rownames(down)[dclust_order], rownames(up)[uclust_order])
+
+cat('Total number of DE genes: ', length(de.geneIds), 
+    '\nNumber of down-regulated genes: ', length(rownames(dclust)), 
+    '\nNumber of up-regulated genes: ', length(rownames(uclust)), '\n')
+```
+
+## Heatmap
+<div style="text-align: justify">
+We use a heatmap to visualize the expression patterns of both up-regulated and down-regulated genes, with genes sorted by hierarchical clustering. This allows us to identify distinct expression patterns across conditions and highlight any clusters of genes with similar regulation.
+</div>
+```{r, fig.width=8, fig.height=10}
+library(RColorBrewer)
+
+# Heatmap avec with combiend and sorted data
+par(mar = c(10, 6, 1, 1))
+image(x = 1:ncol(combined_data),
+      y = 1:nrow(combined_data),
+      z = t(combined_data),  
+      xaxt = "n", yaxt = "n", xlab = "", ylab = "",
+      col = brewer.pal(11, "Spectral"))
+axis(2, at = 1:nrow(combined_data), labels = de.geneIds, las = 2, cex.axis = 1)
+axis(1, at = 1:3, labels = colnames(assay(rld))[1:3], las = 2, col.axis = "orange")
+axis(1, at = 4:6, labels = colnames(assay(rld))[4:6], las = 2, col.axis = "blue")
+```
+<div style="text-align: justify">
+The heatmap reveals several clusters in gene expression. Notably, there appear to be three clusters of down-regulated genes and three clusters of up-regulated genes.
+</div>
+# KEGG Pathway Enrichment Analysis
+<div style="text-align: justify">
+Next, we perform a KEGG Pathway Enrichment Analysis to identify biological pathways that are significantly enriched in the differentially expressed genes (DEGs). KEGG (Kyoto Encyclopedia of Genes and Genomes) pathways are widely used to gain insights into the molecular functions and biological processes of genes.
+</div>
+```{r, message=FALSE, warning=FALSE}
+library(clusterProfiler)
+library(org.Sc.sgd.db)
+
+kegg_enrichment <- enrichKEGG(gene = de.geneIds, organism = "sce")
+```
+<div style="text-align: justify">
+Below are the top enriched pathways related to metabolism in *Saccharomyces cerevisiae*.
+</div>
+```{r}
+as.data.frame(kegg_enrichment)
+```
+<div style="text-align: justify">
+The sulfur metabolism pathway (sce00920) exhibits the strongest enrichment with an extremely low p-value (1.38e-09), emphasizing its significant association with the DEGs. This pathway encompasses genes involved in the biosynthesis of sulfur-containing amino acids, which play a critical role in metabolic processes.
+</div>
+## KEGG Enrichment Visualization
+
+### Dotplot
+<div style="text-align: justify">
+The dotplot highlights the top 5 enriched KEGG pathways, with dot size indicating the number of genes involved and color intensity reflecting the statistical significance (darker colors denote higher significance).
+</div>
+```{r, width = 1200, height = 800}
+dotplot(kegg_enrichment, showCategory = 5)
+```
+<div style="text-align: justify">
+This plot will display the top 5 enriched KEGG pathways, allowing us to quickly assess which pathways are most significantly affected. 
+</div>
+### Centplot
+<div style="text-align: justify">
+This plot shows the connections between pathways and genes, helping to understand how specific genes contribute to the enrichment of certain pathways.
+</div>
+```{r}
+cnetplot(kegg_enrichment, showCategory = 5)
+```
+
+## Biological conclusion
+<div style="text-align: justify">
+The Pathway Enrichment Analysis reveals significant enrichment of pathways related to `sulfur metabolism`, `sulfur amino acid biosynthesis` and `secondary metabolite biosynthesis`, indicating activation of metabolic processes promoting cell growth. These results are in line with the study on SPRC and H₂S production, where CYS3 plays a key role in regulating these pathways.
+</div>
