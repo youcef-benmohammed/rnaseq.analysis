@@ -23,7 +23,7 @@ options(width = 150)
 # Introduction 
 
 <div style="text-align: justify">
-This project investigates the effect of **hydrogen sulfide (H₂S)** on *Saccharomyces cerevisiae* using an RNA-seq analysis pipeline. The pipeline includes data preprocessing, read counting, differential expression analysis, and KEGG pathway enrichment.
+This project investigates the effect of hydrogen sulfide (H₂S), a byproduct of the cystathionine-γ-lyase (CSE)-catalyzed reaction of S-propargyl-cysteine (SPRC), on *Saccharomyces cerevisiae* using an RNA-seq analysis pipeline. The pipeline includes data preprocessing, read counting, differential expression analysis, and KEGG pathway enrichment.
 
 Initially, the raw sequencing data undergoes quality control, alignment to the S. cerevisiae reference genome, and quantification of gene expression. Differential expression analysis is then performed to identify genes with significant changes in expression between experimental conditions. Finally, KEGG pathway enrichment analysis highlights biological pathways associated with the differentially expressed genes (DEGs).
 
