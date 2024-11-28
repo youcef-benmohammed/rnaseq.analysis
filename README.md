@@ -2,7 +2,7 @@
 
 <div style="text-align: justify">
 
-This project explores the effects of hydrogen sulfide (H₂S) on Saccharomyces cerevisiae through RNA-seq analysis. The analysis pipeline is built using Snakemake and includes key steps like quality control, alignment and read counting. Differential expression analysis using DESeq2, and KEGG pathway enrichment.
+This project explores the effects of hydrogen sulfide (H₂S) on **Saccharomyces cerevisiae** through RNA-seq analysis. The analysis pipeline is built using Snakemake and includes key steps like quality control, alignment and read counting. Differential expression analysis using DESeq2, and KEGG pathway enrichment.
 
 </div>
 
