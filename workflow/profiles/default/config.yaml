@@ -1,0 +1,5 @@
+# Local execution: snakemake --workflow-profile workflow/profiles/default
+software-deployment-method: conda
+cores: all
+printshellcmds: true
+rerun-incomplete: true

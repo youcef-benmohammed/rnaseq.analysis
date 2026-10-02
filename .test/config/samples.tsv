@@ -1,0 +1,7 @@
+sample	condition	replicate	sra	fq1	fq2
+CTRL_rep1	CTRL	1		data/CTRL_rep1_R1.fastq.gz	data/CTRL_rep1_R2.fastq.gz
+CTRL_rep2	CTRL	2		data/CTRL_rep2_R1.fastq.gz	data/CTRL_rep2_R2.fastq.gz
+CTRL_rep3	CTRL	3		data/CTRL_rep3_R1.fastq.gz	data/CTRL_rep3_R2.fastq.gz
+TREAT_rep1	TREAT	1		data/TREAT_rep1_R1.fastq.gz	data/TREAT_rep1_R2.fastq.gz
+TREAT_rep2	TREAT	2		data/TREAT_rep2_R1.fastq.gz	data/TREAT_rep2_R2.fastq.gz
+TREAT_rep3	TREAT	3		data/TREAT_rep3_R1.fastq.gz	data/TREAT_rep3_R2.fastq.gz

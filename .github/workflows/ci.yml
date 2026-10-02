@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install "snakemake>=8,<9" snakefmt pandas
+      - name: Formatting (snakefmt)
+        run: snakefmt --check workflow
+      - name: Linting (snakemake --lint)
+        run: snakemake --lint --directory .test
+      - name: Dry-run on the real configuration
+        run: snakemake -n --directory . --workflow-profile none
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          channels: conda-forge,bioconda
+          channel-priority: strict
+          activate-environment: snakemake
+      - name: Install Snakemake
+        run: conda install -y "snakemake-minimal>=8,<9" pandas
+      - name: Run the workflow on the synthetic test dataset
+        run: snakemake --directory .test --sdm conda --cores 4 --conda-frontend conda
+      - name: Check that the planted differential expression is recovered
+        run: python .test/check_results.py
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            .test/results/multiqc/multiqc_report.html
+            .test/results/diffexp/
+            .test/logs/

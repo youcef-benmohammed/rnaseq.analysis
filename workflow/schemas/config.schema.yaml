@@ -1,0 +1,45 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+description: Workflow configuration
+type: object
+properties:
+  samples: {type: string}
+  reference:
+    type: object
+    properties:
+      name: {type: string}
+      fasta: {type: string}
+      gtf: {type: string}
+    required: [name, fasta, gtf]
+  fastp:
+    type: object
+    properties: {extra: {type: string}}
+  star:
+    type: object
+    properties:
+      sa_index_nbases: {type: integer, minimum: 4, maximum: 14}
+      extra: {type: string}
+    required: [sa_index_nbases]
+  featurecounts:
+    type: object
+    properties:
+      strandedness: {type: integer, enum: [0, 1, 2]}
+      extra: {type: string}
+    required: [strandedness]
+  diffexp:
+    type: object
+    properties:
+      design: {type: string, pattern: "^~"}
+      contrasts:
+        type: object
+        minProperties: 1
+        additionalProperties:
+          type: array
+          items: {type: string}
+          minItems: 3
+          maxItems: 3
+      alpha: {type: number, exclusiveMinimum: 0, maximum: 1}
+      lfc_threshold: {type: number, minimum: 0}
+      min_count: {type: integer, minimum: 0}
+      min_samples: {type: integer, minimum: 1}
+    required: [design, contrasts, alpha, lfc_threshold]
+required: [samples, reference, star, featurecounts, diffexp]

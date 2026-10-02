@@ -1,0 +1,13 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+description: One row per sample; reads from SRA (`sra`) or local paired FASTQ files (`fq1`, `fq2`)
+type: object
+properties:
+  sample: {type: string, pattern: "^[A-Za-z0-9_.-]+$"}
+  condition: {type: string}
+  sra: {type: string}
+  fq1: {type: string}
+  fq2: {type: string}
+required: [sample, condition]
+anyOf:
+  - properties: {sra: {pattern: "^[SED]RR[0-9]+$"}}
+  - properties: {fq1: {minLength: 1}, fq2: {minLength: 1}}

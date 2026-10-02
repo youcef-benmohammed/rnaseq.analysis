@@ -1,0 +1,36 @@
+# Sample sheet: one row per sample.
+# Reads come either from SRA (column `sra`) or from local files (`fq1`, `fq2`).
+samples: config/samples.tsv
+
+# Reference genome and annotation: URL (downloaded once) or local path.
+reference:
+  name: Saccharomyces_cerevisiae.R64-1-1
+  fasta: https://ftp.ensembl.org/pub/release-108/fasta/saccharomyces_cerevisiae/dna/Saccharomyces_cerevisiae.R64-1-1.dna.toplevel.fa.gz
+  gtf: https://ftp.ensembl.org/pub/release-108/gtf/saccharomyces_cerevisiae/Saccharomyces_cerevisiae.R64-1-1.108.gtf.gz
+
+# Read trimming / QC.
+fastp:
+  extra: "--detect_adapter_for_pe --qualified_quality_phred 20 --length_required 30"
+
+# STAR. genomeSAindexNbases = min(14, log2(genome length) / 2 - 1): 10 for yeast.
+star:
+  sa_index_nbases: 10
+  extra: "--outFilterMultimapNmax 20 --alignIntronMax 5000"
+
+# featureCounts. strandedness: 0 = unstranded, 1 = stranded, 2 = reverse-stranded.
+featurecounts:
+  strandedness: 0
+  extra: ""
+
+# Differential expression (DESeq2).
+diffexp:
+  # Design formula using columns of the sample sheet.
+  design: "~ condition"
+  # name: [variable, numerator, reference]
+  contrasts:
+    SPRC_vs_CTRL: [condition, SPRC, CTRL]
+  alpha: 0.05
+  lfc_threshold: 1
+  # Pre-filtering: keep genes with >= min_count reads in >= min_samples samples.
+  min_count: 10
+  min_samples: 3

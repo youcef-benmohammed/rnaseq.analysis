@@ -1,0 +1,28 @@
+# Tiny synthetic dataset used by CI (see .test/make_test_data.py).
+# Run from the repository root with: snakemake --directory .test
+samples: config/samples.tsv
+
+reference:
+  name: synthetic
+  fasta: data/genome.fa
+  gtf: data/annotation.gtf
+
+fastp:
+  extra: "--detect_adapter_for_pe --qualified_quality_phred 20 --length_required 30"
+
+star:
+  sa_index_nbases: 7
+  extra: "--outFilterMultimapNmax 20 --alignIntronMax 5000"
+
+featurecounts:
+  strandedness: 0
+  extra: ""
+
+diffexp:
+  design: "~ condition"
+  contrasts:
+    TREAT_vs_CTRL: [condition, TREAT, CTRL]
+  alpha: 0.05
+  lfc_threshold: 1
+  min_count: 10
+  min_samples: 3
