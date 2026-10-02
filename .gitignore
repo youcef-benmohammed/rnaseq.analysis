@@ -1,0 +1,13 @@
+# Workflow outputs
+results/
+resources/
+logs/
+.snakemake/
+.test/results/
+.test/resources/
+.test/logs/
+.test/.snakemake/
+# R / Python
+.Rhistory
+.RData
+__pycache__/

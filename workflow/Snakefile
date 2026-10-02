@@ -1,0 +1,25 @@
+# RNA-seq workflow: QC -> trimming -> STAR alignment -> featureCounts -> DESeq2
+from snakemake.utils import min_version
+
+min_version("8.0")
+
+
+configfile: "config/config.yaml"
+
+
+include: "rules/common.smk"
+include: "rules/ref.smk"
+include: "rules/reads.smk"
+include: "rules/align.smk"
+include: "rules/count.smk"
+include: "rules/diffexp.smk"
+include: "rules/qc.smk"
+
+
+rule all:
+    input:
+        "results/multiqc/multiqc_report.html",
+        "results/counts/counts.tsv",
+        expand("results/diffexp/{contrast}.results.tsv", contrast=CONTRASTS),
+        "results/diffexp/normalized_counts.tsv",
+        "results/diffexp/pca.png",

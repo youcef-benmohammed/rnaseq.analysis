@@ -1,0 +1,19 @@
+# SLURM execution (requires: pip install snakemake-executor-plugin-slurm)
+#   snakemake --workflow-profile workflow/profiles/slurm
+executor: slurm
+jobs: 50
+software-deployment-method: conda
+latency-wait: 60
+rerun-incomplete: true
+printshellcmds: true
+default-resources:
+  slurm_partition: "fast"
+  mem_mb: 4000
+  runtime: 60
+set-resources:
+  star_index:
+    mem_mb: 32000
+    runtime: 120
+  star_align:
+    mem_mb: 32000
+    runtime: 120
